@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101820" />
+    <title>Watch Score</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="watch-body">
+    <main class="watch-shell">
+      <header>
+        <p class="eyebrow">ROOM</p>
+        <strong id="gameId">------</strong>
+      </header>
+
+      <section class="watch-score">
+        <button data-team="home" data-delta="1">
+          <span>HOME</span>
+          <strong id="homeScore">0</strong>
+        </button>
+        <button data-team="away" data-delta="1">
+          <span>AWAY</span>
+          <strong id="awayScore">0</strong>
+        </button>
+      </section>
+
+      <section class="watch-minus">
+        <button data-team="home" data-delta="-1">H -</button>
+        <button data-team="away" data-delta="-1">A -</button>
+      </section>
+    </main>
+
+    <script src="/watch.js" type="module"></script>
+  </body>
+</html>

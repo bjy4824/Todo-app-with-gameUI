@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101820" />
+    <title>Touch Score</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="match-bar" aria-label="경기 정보">
+        <div class="brand-block">
+          <span class="app-mark">TS</span>
+          <div>
+            <p class="eyebrow">TOUCH SCORE</p>
+            <strong>Offline Match Board</strong>
+          </div>
+        </div>
+
+        <div class="clock-panel" aria-label="경기 타이머">
+          <p class="eyebrow">MATCH TIME</p>
+          <strong id="timerDisplay">00:00</strong>
+          <div class="timer-controls">
+            <button id="timerToggle">START</button>
+            <button id="timerReset">00</button>
+          </div>
+        </div>
+
+        <div class="room-panel">
+          <div>
+            <p class="eyebrow">ROOM</p>
+            <strong id="gameId">------</strong>
+          </div>
+          <a id="watchLink" class="watch-link" href="/watch.html">WATCH</a>
+        </div>
+      </header>
+
+      <section class="scoreboard" aria-label="점수판">
+        <article class="team team-home">
+          <div class="team-header">
+            <span class="team-color" aria-hidden="true"></span>
+            <input class="team-name" id="homeName" value="HOME" aria-label="홈 팀 이름" />
+          </div>
+          <button class="score-tile" data-team="home" data-delta="1" aria-label="홈 팀 1점 추가">
+            <span id="homeScore">0</span>
+          </button>
+          <div class="mini-controls">
+            <button data-team="home" data-delta="-1" aria-label="홈 팀 1점 빼기">-</button>
+            <button data-team="home" data-delta="1" aria-label="홈 팀 1점 추가">+</button>
+          </div>
+        </article>
+
+        <div class="quick-actions" aria-label="경기 조작">
+          <button id="undoButton" class="undo-button">UNDO</button>
+          <button id="resetButton" class="reset-button">RESET</button>
+        </div>
+
+        <article class="team team-away">
+          <div class="team-header">
+            <span class="team-color" aria-hidden="true"></span>
+            <input class="team-name" id="awayName" value="AWAY" aria-label="어웨이 팀 이름" />
+          </div>
+          <button class="score-tile" data-team="away" data-delta="1" aria-label="어웨이 팀 1점 추가">
+            <span id="awayScore">0</span>
+          </button>
+          <div class="mini-controls">
+            <button data-team="away" data-delta="-1" aria-label="어웨이 팀 1점 빼기">-</button>
+            <button data-team="away" data-delta="1" aria-label="어웨이 팀 1점 추가">+</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="connect-strip" aria-label="워치 연결">
+        <div>
+          <p class="eyebrow">SMART WATCH · <span id="syncStatus">LOCAL</span></p>
+          <p id="remoteUrl">서버 시작 후 워치용 주소가 표시됩니다.</p>
+        </div>
+        <button id="copyButton">COPY</button>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
