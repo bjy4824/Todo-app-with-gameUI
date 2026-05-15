@@ -1118,7 +1118,7 @@ struct QuestRow: View {
             Rectangle()
                 .stroke(quest.isComplete ? BlockTheme.emerald : BlockTheme.stone, lineWidth: 3)
         }
-        .shadow(color: .black.opacity(0.42), radius: 0, x: 5, y: 5)
+        .shadow(color: .black.opacity(0.36), radius: 0, x: 3, y: 3)
     }
 }
 
@@ -1354,7 +1354,7 @@ struct AchievementToast: View {
             Rectangle()
                 .stroke(BlockTheme.gold, lineWidth: 3)
         }
-        .shadow(color: .black.opacity(0.5), radius: 0, x: 5, y: 5)
+        .shadow(color: .black.opacity(0.42), radius: 0, x: 3, y: 3)
         .padding(.horizontal, 18)
     }
 }
@@ -1387,7 +1387,7 @@ struct ItemSlot: View {
             Image(systemName: systemName)
                 .font(.system(size: size * 0.43, weight: .black))
                 .foregroundStyle(tint)
-                .shadow(color: .black.opacity(0.6), radius: 0, x: 2, y: 2)
+                .shadow(color: .black.opacity(0.45), radius: 0, x: 1, y: 1)
         }
     }
 }
@@ -1547,7 +1547,7 @@ struct BlockPanelModifier: ViewModifier {
                 Rectangle()
                     .stroke(BlockTheme.stone, lineWidth: 4)
             }
-            .shadow(color: .black.opacity(0.46), radius: 0, x: 6, y: 6)
+            .shadow(color: .black.opacity(0.36), radius: 0, x: 3, y: 3)
     }
 }
 
