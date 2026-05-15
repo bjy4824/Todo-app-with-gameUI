@@ -274,8 +274,8 @@ struct PlayerState: Codable, Equatable {
 }
 
 enum QuestTab: String, CaseIterable, Identifiable {
-    case quests = "Quests"
-    case log = "Log"
+    case quests = "Board"
+    case log = "Achievements"
     case shop = "Shop"
 
     var id: String { rawValue }
@@ -860,13 +860,14 @@ struct AddQuestBar: View {
     @Binding var difficulty: QuestDifficulty
     @Binding var scope: QuestScope
     @Binding var category: QuestCategory
+    @State private var showsOptions = false
     @FocusState var isFocused: Bool
     let onAdd: () -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             HStack(spacing: 10) {
-                TextField("Type a new achievement", text: $title)
+                TextField("New quest", text: $title)
                     .focused($isFocused)
                     .submitLabel(.done)
                     .onSubmit(onAdd)
@@ -898,9 +899,31 @@ struct AddQuestBar: View {
                 .accessibilityLabel("Add quest")
             }
 
-            DifficultyPicker(selection: $difficulty)
-            ScopePicker(selection: $scope)
-            CategoryPicker(selection: $category)
+            Button {
+                withAnimation(.snappy) {
+                    showsOptions.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    MiniTag(title: difficulty.rawValue, icon: difficulty.icon, tint: difficulty.tint)
+                    MiniTag(title: scope.rawValue, icon: scope.icon, tint: scope.tint)
+                    MiniTag(title: category.rawValue, icon: category.icon, tint: category.tint)
+                    Spacer()
+                    Image(systemName: showsOptions ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(BlockTheme.dimText)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showsOptions {
+                VStack(spacing: 10) {
+                    DifficultyPicker(selection: $difficulty)
+                    ScopePicker(selection: $scope)
+                    CategoryPicker(selection: $category)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(12)
         .blockPanel()
@@ -981,26 +1004,64 @@ struct QuestFilters: View {
     @Binding var selectedCategory: QuestCategory?
 
     var body: some View {
-        VStack(spacing: 10) {
-            HorizontalChipPicker(title: "PERIOD FILTER") {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("FILTER")
+                    .font(.system(.caption2, design: .monospaced).weight(.black))
+                    .foregroundStyle(BlockTheme.dimText)
+                Spacer()
+                Button {
+                    selectedScope = nil
+                    selectedCategory = nil
+                } label: {
+                    Text("CLEAR")
+                        .font(.system(.caption2, design: .monospaced).weight(.black))
+                        .foregroundStyle(BlockTheme.gold)
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 8) {
                 ChipButton(title: "All", icon: "square.grid.2x2.fill", tint: BlockTheme.gold, isSelected: selectedScope == nil) {
+                    selectedCategory = nil
                     selectedScope = nil
                 }
-                ForEach(QuestScope.allCases) { scope in
-                    ChipButton(title: "\(scope.rawValue) \(store.questCount(scope: scope))", icon: scope.icon, tint: scope.tint, isSelected: selectedScope == scope) {
-                        selectedScope = scope
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(QuestScope.allCases) { scope in
+                            ChipButton(title: "\(scope.rawValue) \(store.questCount(scope: scope))", icon: scope.icon, tint: scope.tint, isSelected: selectedScope == scope) {
+                                selectedScope = scope
+                            }
+                        }
                     }
                 }
             }
 
-            HorizontalChipPicker(title: "CATEGORY FILTER") {
-                ChipButton(title: "All", icon: "tray.full.fill", tint: BlockTheme.gold, isSelected: selectedCategory == nil) {
+            Menu {
+                Button("All Categories") {
                     selectedCategory = nil
                 }
                 ForEach(QuestCategory.allCases) { category in
-                    ChipButton(title: "\(category.rawValue) \(store.questCount(category: category))", icon: category.icon, tint: category.tint, isSelected: selectedCategory == category) {
+                    Button("\(category.rawValue) (\(store.questCount(category: category)))") {
                         selectedCategory = category
                     }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: selectedCategory?.icon ?? "tray.full.fill")
+                    Text(selectedCategory?.rawValue ?? "All Categories")
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                }
+                .font(.system(.caption, design: .monospaced).weight(.black))
+                .foregroundStyle(BlockTheme.text)
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(Color.black.opacity(0.58))
+                .overlay {
+                    Rectangle()
+                        .stroke(BlockTheme.stone, lineWidth: 3)
                 }
             }
         }
@@ -1072,7 +1133,7 @@ struct QuestRow: View {
             }
             .buttonStyle(.plain)
 
-            Button(action: onToggle) {
+            Button(action: onEdit) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(quest.isComplete ? "Achievement Get!" : "\(quest.difficulty.rawValue) Achievement")
                         .font(.system(.caption2, design: .monospaced).weight(.black))
