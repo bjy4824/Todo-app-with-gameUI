@@ -46,10 +46,75 @@ enum QuestDifficulty: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum QuestScope: String, CaseIterable, Identifiable, Codable {
+    case daily = "Daily"
+    case weekly = "Weekly"
+    case monthly = "Monthly"
+    case longTerm = "Long-term"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .daily: "sun.max.fill"
+        case .weekly: "calendar.badge.clock"
+        case .monthly: "calendar"
+        case .longTerm: "mountain.2.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .daily: BlockTheme.gold
+        case .weekly: BlockTheme.emerald
+        case .monthly: BlockTheme.diamond
+        case .longTerm: BlockTheme.redstone
+        }
+    }
+}
+
+enum QuestCategory: String, CaseIterable, Identifiable, Codable {
+    case study = "Study"
+    case friends = "Friends"
+    case selfGrowth = "Growth"
+    case exercise = "Exercise"
+    case work = "Work"
+    case life = "Life"
+    case custom = "Custom"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .study: "book.closed.fill"
+        case .friends: "person.2.fill"
+        case .selfGrowth: "sparkles"
+        case .exercise: "figure.strengthtraining.traditional"
+        case .work: "briefcase.fill"
+        case .life: "house.fill"
+        case .custom: "slider.horizontal.3"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .study: BlockTheme.diamond
+        case .friends: BlockTheme.gold
+        case .selfGrowth: BlockTheme.emerald
+        case .exercise: BlockTheme.redstone
+        case .work: Color(red: 0.78, green: 0.58, blue: 0.38)
+        case .life: BlockTheme.grass
+        case .custom: BlockTheme.dimText
+        }
+    }
+}
+
 struct Quest: Identifiable, Codable, Equatable {
     let id: UUID
     var title: String
     var difficulty: QuestDifficulty
+    var scope: QuestScope
+    var category: QuestCategory
     var isComplete: Bool
     var createdAt: Date
     var completedAt: Date?
@@ -61,6 +126,8 @@ struct Quest: Identifiable, Codable, Equatable {
         id: UUID = UUID(),
         title: String,
         difficulty: QuestDifficulty = .normal,
+        scope: QuestScope = .daily,
+        category: QuestCategory = .selfGrowth,
         isComplete: Bool = false,
         createdAt: Date = Date(),
         completedAt: Date? = nil
@@ -68,6 +135,8 @@ struct Quest: Identifiable, Codable, Equatable {
         self.id = id
         self.title = title
         self.difficulty = difficulty
+        self.scope = scope
+        self.category = category
         self.isComplete = isComplete
         self.createdAt = createdAt
         self.completedAt = completedAt
@@ -77,6 +146,8 @@ struct Quest: Identifiable, Codable, Equatable {
         case id
         case title
         case difficulty
+        case scope
+        case category
         case rewardXP
         case rewardCoins
         case isComplete
@@ -91,6 +162,8 @@ struct Quest: Identifiable, Codable, Equatable {
         isComplete = try container.decodeIfPresent(Bool.self, forKey: .isComplete) ?? false
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+        scope = try container.decodeIfPresent(QuestScope.self, forKey: .scope) ?? .daily
+        category = try container.decodeIfPresent(QuestCategory.self, forKey: .category) ?? .selfGrowth
 
         if let decodedDifficulty = try container.decodeIfPresent(QuestDifficulty.self, forKey: .difficulty) {
             difficulty = decodedDifficulty
@@ -110,6 +183,8 @@ struct Quest: Identifiable, Codable, Equatable {
         try container.encode(id, forKey: .id)
         try container.encode(title, forKey: .title)
         try container.encode(difficulty, forKey: .difficulty)
+        try container.encode(scope, forKey: .scope)
+        try container.encode(category, forKey: .category)
         try container.encode(isComplete, forKey: .isComplete)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(completedAt, forKey: .completedAt)
@@ -261,9 +336,9 @@ final class QuestStore: ObservableObject {
             quests = decodedQuests
         } else {
             quests = [
-                Quest(title: "Gather morning focus", difficulty: .easy),
-                Quest(title: "Craft one hard task", difficulty: .hard),
-                Quest(title: "Place tomorrow's first block", difficulty: .normal)
+                Quest(title: "Gather morning focus", difficulty: .easy, scope: .daily, category: .selfGrowth),
+                Quest(title: "Craft one hard task", difficulty: .hard, scope: .weekly, category: .study),
+                Quest(title: "Place tomorrow's first block", difficulty: .normal, scope: .monthly, category: .life)
             ]
         }
 
@@ -312,17 +387,35 @@ final class QuestStore: ObservableObject {
         dailyRecords.first { $0.dayKey == Self.dayKey(for: Date()) } ?? DailyRecord(dayKey: Self.dayKey(for: Date()), completed: 0, xp: 0, coins: 0)
     }
 
-    func addQuest(title: String, difficulty: QuestDifficulty) {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty else { return }
-        quests.insert(Quest(title: trimmedTitle, difficulty: difficulty), at: 0)
+    func questCount(scope: QuestScope) -> Int {
+        quests.filter { $0.scope == scope && !$0.isComplete }.count
     }
 
-    func updateQuest(_ quest: Quest, title: String, difficulty: QuestDifficulty) {
+    func questCount(category: QuestCategory) -> Int {
+        quests.filter { $0.category == category && !$0.isComplete }.count
+    }
+
+    func filteredQuests(scope: QuestScope?, category: QuestCategory?, isComplete: Bool) -> [Quest] {
+        quests.filter { quest in
+            quest.isComplete == isComplete
+                && (scope == nil || quest.scope == scope)
+                && (category == nil || quest.category == category)
+        }
+    }
+
+    func addQuest(title: String, difficulty: QuestDifficulty, scope: QuestScope, category: QuestCategory) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        quests.insert(Quest(title: trimmedTitle, difficulty: difficulty, scope: scope, category: category), at: 0)
+    }
+
+    func updateQuest(_ quest: Quest, title: String, difficulty: QuestDifficulty, scope: QuestScope, category: QuestCategory) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty, let index = quests.firstIndex(of: quest) else { return }
         quests[index].title = trimmedTitle
         quests[index].difficulty = difficulty
+        quests[index].scope = scope
+        quests[index].category = category
     }
 
     func toggleQuest(_ quest: Quest) -> Bool {
@@ -475,6 +568,10 @@ struct ContentView: View {
     @State private var selectedTab: QuestTab = .quests
     @State private var newQuestTitle = ""
     @State private var newDifficulty: QuestDifficulty = .normal
+    @State private var newScope: QuestScope = .daily
+    @State private var newCategory: QuestCategory = .selfGrowth
+    @State private var selectedScope: QuestScope?
+    @State private var selectedCategory: QuestCategory?
     @State private var editingQuest: Quest?
     @State private var achievementTitle: String?
     @FocusState private var isAddingQuest: Bool
@@ -496,6 +593,10 @@ struct ContentView: View {
                                 store: store,
                                 title: $newQuestTitle,
                                 difficulty: $newDifficulty,
+                                scope: $newScope,
+                                category: $newCategory,
+                                selectedScope: $selectedScope,
+                                selectedCategory: $selectedCategory,
                                 isFocused: _isAddingQuest,
                                 onAdd: addQuest,
                                 onEdit: { editingQuest = $0 },
@@ -543,8 +644,8 @@ struct ContentView: View {
                 }
             }
             .sheet(item: $editingQuest) { quest in
-                EditQuestSheet(quest: quest) { title, difficulty in
-                    store.updateQuest(quest, title: title, difficulty: difficulty)
+                EditQuestSheet(quest: quest) { title, difficulty, scope, category in
+                    store.updateQuest(quest, title: title, difficulty: difficulty, scope: scope, category: category)
                     editingQuest = nil
                 }
             }
@@ -552,7 +653,7 @@ struct ContentView: View {
     }
 
     private func addQuest() {
-        store.addQuest(title: newQuestTitle, difficulty: newDifficulty)
+        store.addQuest(title: newQuestTitle, difficulty: newDifficulty, scope: newScope, category: newCategory)
         newQuestTitle = ""
         isAddingQuest = false
     }
@@ -711,29 +812,42 @@ struct QuestPanel: View {
     @ObservedObject var store: QuestStore
     @Binding var title: String
     @Binding var difficulty: QuestDifficulty
+    @Binding var scope: QuestScope
+    @Binding var category: QuestCategory
+    @Binding var selectedScope: QuestScope?
+    @Binding var selectedCategory: QuestCategory?
     @FocusState var isFocused: Bool
     let onAdd: () -> Void
     let onEdit: (Quest) -> Void
     let onToggle: (Quest) -> Void
 
+    private var activeFiltered: [Quest] {
+        store.filteredQuests(scope: selectedScope, category: selectedCategory, isComplete: false)
+    }
+
+    private var completedFiltered: [Quest] {
+        store.filteredQuests(scope: selectedScope, category: selectedCategory, isComplete: true)
+    }
+
     var body: some View {
         VStack(spacing: 14) {
-            AddQuestBar(title: $title, difficulty: $difficulty, isFocused: _isFocused, onAdd: onAdd)
+            AddQuestBar(title: $title, difficulty: $difficulty, scope: $scope, category: $category, isFocused: _isFocused, onAdd: onAdd)
+            QuestFilters(store: store, selectedScope: $selectedScope, selectedCategory: $selectedCategory)
 
             VStack(alignment: .leading, spacing: 10) {
-                SectionTitle("ACTIVE QUESTS", value: "\(store.activeQuests.count)")
-                if store.activeQuests.isEmpty {
-                    EmptyQuestView(text: "No active quests. Add a new task to start mining progress.")
+                SectionTitle("ACTIVE QUESTS", value: "\(activeFiltered.count)")
+                if activeFiltered.isEmpty {
+                    EmptyQuestView(text: "No active quests match this filter. Change the scope or category to see more.")
                 } else {
-                    ForEach(store.activeQuests) { quest in
+                    ForEach(activeFiltered) { quest in
                         QuestRow(quest: quest, onToggle: { onToggle(quest) }, onEdit: { onEdit(quest) }, onDelete: { store.deleteQuest(quest) })
                     }
                 }
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                SectionTitle("COMPLETED", value: "\(store.completedQuests.count)")
-                ForEach(store.completedQuests.prefix(4)) { quest in
+                SectionTitle("COMPLETED", value: "\(completedFiltered.count)")
+                ForEach(completedFiltered.prefix(4)) { quest in
                     QuestRow(quest: quest, onToggle: { onToggle(quest) }, onEdit: { onEdit(quest) }, onDelete: { store.deleteQuest(quest) })
                 }
             }
@@ -744,6 +858,8 @@ struct QuestPanel: View {
 struct AddQuestBar: View {
     @Binding var title: String
     @Binding var difficulty: QuestDifficulty
+    @Binding var scope: QuestScope
+    @Binding var category: QuestCategory
     @FocusState var isFocused: Bool
     let onAdd: () -> Void
 
@@ -783,6 +899,8 @@ struct AddQuestBar: View {
             }
 
             DifficultyPicker(selection: $difficulty)
+            ScopePicker(selection: $scope)
+            CategoryPicker(selection: $category)
         }
         .padding(12)
         .blockPanel()
@@ -819,6 +937,124 @@ struct DifficultyPicker: View {
     }
 }
 
+struct ScopePicker: View {
+    @Binding var selection: QuestScope
+
+    var body: some View {
+        HorizontalChipPicker(title: "PERIOD") {
+            ForEach(QuestScope.allCases) { scope in
+                ChipButton(
+                    title: scope.rawValue,
+                    icon: scope.icon,
+                    tint: scope.tint,
+                    isSelected: selection == scope
+                ) {
+                    selection = scope
+                }
+            }
+        }
+    }
+}
+
+struct CategoryPicker: View {
+    @Binding var selection: QuestCategory
+
+    var body: some View {
+        HorizontalChipPicker(title: "CATEGORY") {
+            ForEach(QuestCategory.allCases) { category in
+                ChipButton(
+                    title: category.rawValue,
+                    icon: category.icon,
+                    tint: category.tint,
+                    isSelected: selection == category
+                ) {
+                    selection = category
+                }
+            }
+        }
+    }
+}
+
+struct QuestFilters: View {
+    @ObservedObject var store: QuestStore
+    @Binding var selectedScope: QuestScope?
+    @Binding var selectedCategory: QuestCategory?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HorizontalChipPicker(title: "PERIOD FILTER") {
+                ChipButton(title: "All", icon: "square.grid.2x2.fill", tint: BlockTheme.gold, isSelected: selectedScope == nil) {
+                    selectedScope = nil
+                }
+                ForEach(QuestScope.allCases) { scope in
+                    ChipButton(title: "\(scope.rawValue) \(store.questCount(scope: scope))", icon: scope.icon, tint: scope.tint, isSelected: selectedScope == scope) {
+                        selectedScope = scope
+                    }
+                }
+            }
+
+            HorizontalChipPicker(title: "CATEGORY FILTER") {
+                ChipButton(title: "All", icon: "tray.full.fill", tint: BlockTheme.gold, isSelected: selectedCategory == nil) {
+                    selectedCategory = nil
+                }
+                ForEach(QuestCategory.allCases) { category in
+                    ChipButton(title: "\(category.rawValue) \(store.questCount(category: category))", icon: category.icon, tint: category.tint, isSelected: selectedCategory == category) {
+                        selectedCategory = category
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .blockPanel()
+    }
+}
+
+struct HorizontalChipPicker<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(.caption2, design: .monospaced).weight(.black))
+                .foregroundStyle(BlockTheme.dimText)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    content()
+                }
+            }
+        }
+    }
+}
+
+struct ChipButton: View {
+    let title: String
+    let icon: String
+    let tint: Color
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                Text(title)
+                    .lineLimit(1)
+            }
+            .font(.system(.caption2, design: .monospaced).weight(.black))
+            .foregroundStyle(isSelected ? .black : BlockTheme.text)
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+            .background(isSelected ? tint : Color.black.opacity(0.58))
+            .overlay {
+                Rectangle()
+                    .stroke(isSelected ? .black.opacity(0.62) : BlockTheme.stone, lineWidth: 3)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct QuestRow: View {
     let quest: Quest
     let onToggle: () -> Void
@@ -849,6 +1085,10 @@ struct QuestRow: View {
                     Text("+\(quest.rewardXP) XP  +\(quest.rewardCoins) coins")
                         .font(.system(.caption, design: .monospaced).weight(.bold))
                         .foregroundStyle(BlockTheme.emerald)
+                    HStack(spacing: 6) {
+                        MiniTag(title: quest.scope.rawValue, icon: quest.scope.icon, tint: quest.scope.tint)
+                        MiniTag(title: quest.category.rawValue, icon: quest.category.icon, tint: quest.category.tint)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -884,16 +1124,20 @@ struct QuestRow: View {
 
 struct EditQuestSheet: View {
     let quest: Quest
-    let onSave: (String, QuestDifficulty) -> Void
+    let onSave: (String, QuestDifficulty, QuestScope, QuestCategory) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var difficulty: QuestDifficulty
+    @State private var scope: QuestScope
+    @State private var category: QuestCategory
 
-    init(quest: Quest, onSave: @escaping (String, QuestDifficulty) -> Void) {
+    init(quest: Quest, onSave: @escaping (String, QuestDifficulty, QuestScope, QuestCategory) -> Void) {
         self.quest = quest
         self.onSave = onSave
         _title = State(initialValue: quest.title)
         _difficulty = State(initialValue: quest.difficulty)
+        _scope = State(initialValue: quest.scope)
+        _category = State(initialValue: quest.category)
     }
 
     var body: some View {
@@ -914,6 +1158,8 @@ struct EditQuestSheet: View {
                         }
 
                     DifficultyPicker(selection: $difficulty)
+                    ScopePicker(selection: $scope)
+                    CategoryPicker(selection: $category)
                     Spacer()
                 }
                 .padding(16)
@@ -925,7 +1171,7 @@ struct EditQuestSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(title, difficulty) }
+                    Button("Save") { onSave(title, difficulty, scope, category) }
                 }
             }
         }
@@ -1215,6 +1461,28 @@ struct CurrencyBlock: View {
         .overlay {
             Rectangle()
                 .stroke(.black.opacity(0.72), lineWidth: 3)
+        }
+    }
+}
+
+struct MiniTag: View {
+    let title: String
+    let icon: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+            Text(title)
+        }
+        .font(.system(size: 9, weight: .black, design: .monospaced))
+        .foregroundStyle(.black)
+        .padding(.horizontal, 6)
+        .frame(height: 20)
+        .background(tint)
+        .overlay {
+            Rectangle()
+                .stroke(.black.opacity(0.58), lineWidth: 2)
         }
     }
 }
