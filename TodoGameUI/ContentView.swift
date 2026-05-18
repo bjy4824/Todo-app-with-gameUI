@@ -109,34 +109,123 @@ enum QuestCategory: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum QuestType: String, CaseIterable, Identifiable, Codable {
+    case main = "Main"
+    case side = "Side"
+    case challenge = "Challenge"
+    case repeatable = "Repeatable"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .main: "flag.fill"
+        case .side: "signpost.right.fill"
+        case .challenge: "bolt.fill"
+        case .repeatable: "repeat"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .main: BlockTheme.gold
+        case .side: BlockTheme.emerald
+        case .challenge: BlockTheme.redstone
+        case .repeatable: BlockTheme.diamond
+        }
+    }
+
+    var sortPriority: Int {
+        switch self {
+        case .main: 0
+        case .challenge: 1
+        case .side: 2
+        case .repeatable: 3
+        }
+    }
+}
+
+enum QuestStatus: String {
+    case inProgress = "In Progress"
+    case readyToClaim = "Ready"
+    case completed = "Completed"
+
+    var icon: String {
+        switch self {
+        case .inProgress: "hourglass"
+        case .readyToClaim: "gift.fill"
+        case .completed: "checkmark.seal.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .inProgress: BlockTheme.dimText
+        case .readyToClaim: BlockTheme.gold
+        case .completed: BlockTheme.emerald
+        }
+    }
+}
+
+struct QuestObjective: Identifiable, Codable, Equatable {
+    let id: UUID
+    var title: String
+    var isComplete: Bool
+
+    init(id: UUID = UUID(), title: String, isComplete: Bool = false) {
+        self.id = id
+        self.title = title
+        self.isComplete = isComplete
+    }
+}
+
 struct Quest: Identifiable, Codable, Equatable {
     let id: UUID
     var title: String
+    var type: QuestType
     var difficulty: QuestDifficulty
     var scope: QuestScope
     var category: QuestCategory
+    var objectives: [QuestObjective]
     var isComplete: Bool
     var createdAt: Date
     var completedAt: Date?
 
     var rewardXP: Int { difficulty.xp }
     var rewardCoins: Int { difficulty.coins }
+    var completedObjectiveCount: Int { objectives.filter(\.isComplete).count }
+    var objectiveProgress: Double {
+        guard !objectives.isEmpty else { return isComplete ? 1 : 0 }
+        return Double(completedObjectiveCount) / Double(objectives.count)
+    }
+    var isReadyToClaim: Bool {
+        !isComplete && !objectives.isEmpty && objectives.allSatisfy(\.isComplete)
+    }
+    var status: QuestStatus {
+        if isComplete { return .completed }
+        if isReadyToClaim { return .readyToClaim }
+        return .inProgress
+    }
 
     init(
         id: UUID = UUID(),
         title: String,
+        type: QuestType = .side,
         difficulty: QuestDifficulty = .normal,
         scope: QuestScope = .daily,
         category: QuestCategory = .selfGrowth,
+        objectives: [QuestObjective] = [],
         isComplete: Bool = false,
         createdAt: Date = Date(),
         completedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
+        self.type = type
         self.difficulty = difficulty
         self.scope = scope
         self.category = category
+        self.objectives = objectives
         self.isComplete = isComplete
         self.createdAt = createdAt
         self.completedAt = completedAt
@@ -145,9 +234,11 @@ struct Quest: Identifiable, Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id
         case title
+        case type
         case difficulty
         case scope
         case category
+        case objectives
         case rewardXP
         case rewardCoins
         case isComplete
@@ -159,11 +250,13 @@ struct Quest: Identifiable, Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         title = try container.decode(String.self, forKey: .title)
+        type = try container.decodeIfPresent(QuestType.self, forKey: .type) ?? .side
         isComplete = try container.decodeIfPresent(Bool.self, forKey: .isComplete) ?? false
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
         scope = try container.decodeIfPresent(QuestScope.self, forKey: .scope) ?? .daily
         category = try container.decodeIfPresent(QuestCategory.self, forKey: .category) ?? .selfGrowth
+        objectives = try container.decodeIfPresent([QuestObjective].self, forKey: .objectives) ?? []
 
         if let decodedDifficulty = try container.decodeIfPresent(QuestDifficulty.self, forKey: .difficulty) {
             difficulty = decodedDifficulty
@@ -182,9 +275,11 @@ struct Quest: Identifiable, Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(title, forKey: .title)
+        try container.encode(type, forKey: .type)
         try container.encode(difficulty, forKey: .difficulty)
         try container.encode(scope, forKey: .scope)
         try container.encode(category, forKey: .category)
+        try container.encode(objectives, forKey: .objectives)
         try container.encode(isComplete, forKey: .isComplete)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(completedAt, forKey: .completedAt)
@@ -336,9 +431,30 @@ final class QuestStore: ObservableObject {
             quests = decodedQuests
         } else {
             quests = [
-                Quest(title: "Gather morning focus", difficulty: .easy, scope: .daily, category: .selfGrowth),
-                Quest(title: "Craft one hard task", difficulty: .hard, scope: .weekly, category: .study),
-                Quest(title: "Place tomorrow's first block", difficulty: .normal, scope: .monthly, category: .life)
+                Quest(
+                    title: "Build today's focus base",
+                    type: .main,
+                    difficulty: .normal,
+                    scope: .daily,
+                    category: .selfGrowth,
+                    objectives: [
+                        QuestObjective(title: "Choose one priority"),
+                        QuestObjective(title: "Clear 25 minutes of focus")
+                    ]
+                ),
+                Quest(
+                    title: "Craft one hard study task",
+                    type: .challenge,
+                    difficulty: .hard,
+                    scope: .weekly,
+                    category: .study,
+                    objectives: [
+                        QuestObjective(title: "Prepare material"),
+                        QuestObjective(title: "Finish the hard part"),
+                        QuestObjective(title: "Write a short review")
+                    ]
+                ),
+                Quest(title: "Place tomorrow's first block", type: .side, difficulty: .easy, scope: .daily, category: .life)
             ]
         }
 
@@ -401,25 +517,37 @@ final class QuestStore: ObservableObject {
                 && (scope == nil || quest.scope == scope)
                 && (category == nil || quest.category == category)
         }
+        .sorted { first, second in
+            if first.isReadyToClaim != second.isReadyToClaim {
+                return first.isReadyToClaim
+            }
+            if first.type.sortPriority != second.type.sortPriority {
+                return first.type.sortPriority < second.type.sortPriority
+            }
+            return first.createdAt > second.createdAt
+        }
     }
 
-    func addQuest(title: String, difficulty: QuestDifficulty, scope: QuestScope, category: QuestCategory) {
+    func addQuest(title: String, type: QuestType, difficulty: QuestDifficulty, scope: QuestScope, category: QuestCategory, objectives: [QuestObjective]) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
-        quests.insert(Quest(title: trimmedTitle, difficulty: difficulty, scope: scope, category: category), at: 0)
+        quests.insert(Quest(title: trimmedTitle, type: type, difficulty: difficulty, scope: scope, category: category, objectives: objectives), at: 0)
     }
 
-    func updateQuest(_ quest: Quest, title: String, difficulty: QuestDifficulty, scope: QuestScope, category: QuestCategory) {
+    func updateQuest(_ quest: Quest, title: String, type: QuestType, difficulty: QuestDifficulty, scope: QuestScope, category: QuestCategory, objectives: [QuestObjective]) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty, let index = quests.firstIndex(of: quest) else { return }
         quests[index].title = trimmedTitle
+        quests[index].type = type
         quests[index].difficulty = difficulty
         quests[index].scope = scope
         quests[index].category = category
+        quests[index].objectives = objectives
     }
 
     func toggleQuest(_ quest: Quest) -> Bool {
         guard let index = quests.firstIndex(of: quest) else { return false }
+        guard quests[index].objectives.isEmpty || quests[index].isReadyToClaim || quests[index].isComplete else { return false }
         quests[index].isComplete.toggle()
 
         if quests[index].isComplete {
@@ -444,6 +572,15 @@ final class QuestStore: ObservableObject {
             quests[index].completedAt = nil
             return false
         }
+    }
+
+    func toggleObjective(_ objective: QuestObjective, in quest: Quest) {
+        guard
+            let questIndex = quests.firstIndex(of: quest),
+            let objectiveIndex = quests[questIndex].objectives.firstIndex(of: objective),
+            !quests[questIndex].isComplete
+        else { return }
+        quests[questIndex].objectives[objectiveIndex].isComplete.toggle()
     }
 
     func deleteQuest(_ quest: Quest) {
@@ -567,9 +704,11 @@ struct ContentView: View {
     @StateObject private var store = QuestStore()
     @State private var selectedTab: QuestTab = .quests
     @State private var newQuestTitle = ""
+    @State private var newQuestType: QuestType = .side
     @State private var newDifficulty: QuestDifficulty = .normal
     @State private var newScope: QuestScope = .daily
     @State private var newCategory: QuestCategory = .selfGrowth
+    @State private var newObjectiveText = ""
     @State private var selectedScope: QuestScope?
     @State private var selectedCategory: QuestCategory?
     @State private var editingQuest: Quest?
@@ -592,15 +731,22 @@ struct ContentView: View {
                             QuestPanel(
                                 store: store,
                                 title: $newQuestTitle,
+                                questType: $newQuestType,
                                 difficulty: $newDifficulty,
                                 scope: $newScope,
                                 category: $newCategory,
+                                objectiveText: $newObjectiveText,
                                 selectedScope: $selectedScope,
                                 selectedCategory: $selectedCategory,
                                 isFocused: _isAddingQuest,
                                 onAdd: addQuest,
                                 onEdit: { editingQuest = $0 },
-                                onToggle: completeQuest
+                                onToggle: completeQuest,
+                                onObjectiveToggle: { objective, quest in
+                                    withAnimation(.snappy) {
+                                        store.toggleObjective(objective, in: quest)
+                                    }
+                                }
                             )
                         case .log:
                             AchievementLogPanel(store: store)
@@ -644,8 +790,8 @@ struct ContentView: View {
                 }
             }
             .sheet(item: $editingQuest) { quest in
-                EditQuestSheet(quest: quest) { title, difficulty, scope, category in
-                    store.updateQuest(quest, title: title, difficulty: difficulty, scope: scope, category: category)
+                EditQuestSheet(quest: quest) { title, type, difficulty, scope, category, objectives in
+                    store.updateQuest(quest, title: title, type: type, difficulty: difficulty, scope: scope, category: category, objectives: objectives)
                     editingQuest = nil
                 }
             }
@@ -653,9 +799,25 @@ struct ContentView: View {
     }
 
     private func addQuest() {
-        store.addQuest(title: newQuestTitle, difficulty: newDifficulty, scope: newScope, category: newCategory)
+        store.addQuest(
+            title: newQuestTitle,
+            type: newQuestType,
+            difficulty: newDifficulty,
+            scope: newScope,
+            category: newCategory,
+            objectives: parsedObjectives(from: newObjectiveText)
+        )
         newQuestTitle = ""
+        newObjectiveText = ""
         isAddingQuest = false
+    }
+
+    private func parsedObjectives(from text: String) -> [QuestObjective] {
+        text
+            .split(whereSeparator: { $0 == "," || $0 == "\n" })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { QuestObjective(title: $0) }
     }
 
     private func completeQuest(_ quest: Quest) {
@@ -811,15 +973,18 @@ struct TabBar: View {
 struct QuestPanel: View {
     @ObservedObject var store: QuestStore
     @Binding var title: String
+    @Binding var questType: QuestType
     @Binding var difficulty: QuestDifficulty
     @Binding var scope: QuestScope
     @Binding var category: QuestCategory
+    @Binding var objectiveText: String
     @Binding var selectedScope: QuestScope?
     @Binding var selectedCategory: QuestCategory?
     @FocusState var isFocused: Bool
     let onAdd: () -> Void
     let onEdit: (Quest) -> Void
     let onToggle: (Quest) -> Void
+    let onObjectiveToggle: (QuestObjective, Quest) -> Void
 
     private var activeFiltered: [Quest] {
         store.filteredQuests(scope: selectedScope, category: selectedCategory, isComplete: false)
@@ -831,7 +996,16 @@ struct QuestPanel: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            AddQuestBar(title: $title, difficulty: $difficulty, scope: $scope, category: $category, isFocused: _isFocused, onAdd: onAdd)
+            AddQuestBar(
+                title: $title,
+                questType: $questType,
+                difficulty: $difficulty,
+                scope: $scope,
+                category: $category,
+                objectiveText: $objectiveText,
+                isFocused: _isFocused,
+                onAdd: onAdd
+            )
             QuestFilters(store: store, selectedScope: $selectedScope, selectedCategory: $selectedCategory)
 
             VStack(alignment: .leading, spacing: 10) {
@@ -840,7 +1014,13 @@ struct QuestPanel: View {
                     EmptyQuestView(text: "No active quests match this filter. Change the scope or category to see more.")
                 } else {
                     ForEach(activeFiltered) { quest in
-                        QuestRow(quest: quest, onToggle: { onToggle(quest) }, onEdit: { onEdit(quest) }, onDelete: { store.deleteQuest(quest) })
+                        QuestRow(
+                            quest: quest,
+                            onToggle: { onToggle(quest) },
+                            onObjectiveToggle: { objective in onObjectiveToggle(objective, quest) },
+                            onEdit: { onEdit(quest) },
+                            onDelete: { store.deleteQuest(quest) }
+                        )
                     }
                 }
             }
@@ -848,7 +1028,13 @@ struct QuestPanel: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionTitle("COMPLETED", value: "\(completedFiltered.count)")
                 ForEach(completedFiltered.prefix(4)) { quest in
-                    QuestRow(quest: quest, onToggle: { onToggle(quest) }, onEdit: { onEdit(quest) }, onDelete: { store.deleteQuest(quest) })
+                    QuestRow(
+                        quest: quest,
+                        onToggle: { onToggle(quest) },
+                        onObjectiveToggle: { objective in onObjectiveToggle(objective, quest) },
+                        onEdit: { onEdit(quest) },
+                        onDelete: { store.deleteQuest(quest) }
+                    )
                 }
             }
         }
@@ -857,9 +1043,11 @@ struct QuestPanel: View {
 
 struct AddQuestBar: View {
     @Binding var title: String
+    @Binding var questType: QuestType
     @Binding var difficulty: QuestDifficulty
     @Binding var scope: QuestScope
     @Binding var category: QuestCategory
+    @Binding var objectiveText: String
     @State private var showsOptions = false
     @FocusState var isFocused: Bool
     let onAdd: () -> Void
@@ -905,6 +1093,7 @@ struct AddQuestBar: View {
                 }
             } label: {
                 HStack(spacing: 8) {
+                    MiniTag(title: questType.rawValue, icon: questType.icon, tint: questType.tint)
                     MiniTag(title: difficulty.rawValue, icon: difficulty.icon, tint: difficulty.tint)
                     MiniTag(title: scope.rawValue, icon: scope.icon, tint: scope.tint)
                     MiniTag(title: category.rawValue, icon: category.icon, tint: category.tint)
@@ -918,15 +1107,46 @@ struct AddQuestBar: View {
 
             if showsOptions {
                 VStack(spacing: 10) {
+                    QuestTypePicker(selection: $questType)
                     DifficultyPicker(selection: $difficulty)
                     ScopePicker(selection: $scope)
                     CategoryPicker(selection: $category)
+                    TextField("Objectives: stretch, workout, cardio", text: $objectiveText, axis: .vertical)
+                        .lineLimit(2...4)
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                        .foregroundStyle(BlockTheme.text)
+                        .tint(BlockTheme.gold)
+                        .padding(10)
+                        .background(BlockTheme.bedrock)
+                        .overlay {
+                            Rectangle()
+                                .stroke(BlockTheme.stone, lineWidth: 3)
+                        }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(12)
         .blockPanel()
+    }
+}
+
+struct QuestTypePicker: View {
+    @Binding var selection: QuestType
+
+    var body: some View {
+        HorizontalChipPicker(title: "QUEST TYPE") {
+            ForEach(QuestType.allCases) { type in
+                ChipButton(
+                    title: type.rawValue,
+                    icon: type.icon,
+                    tint: type.tint,
+                    isSelected: selection == type
+                ) {
+                    selection = type
+                }
+            }
+        }
     }
 }
 
@@ -1119,86 +1339,177 @@ struct ChipButton: View {
 struct QuestRow: View {
     let quest: Quest
     let onToggle: () -> Void
+    let onObjectiveToggle: (QuestObjective) -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onToggle) {
-                ItemSlot(
-                    systemName: quest.isComplete ? "checkmark.seal.fill" : quest.difficulty.icon,
-                    tint: quest.isComplete ? BlockTheme.emerald : quest.difficulty.tint,
-                    size: 54
-                )
-            }
-            .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Button(action: onToggle) {
+                    ItemSlot(
+                        systemName: quest.status.icon,
+                        tint: quest.status.tint,
+                        size: quest.type == .main ? 60 : 54
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(quest.isReadyToClaim ? "Claim quest reward" : "Toggle quest")
 
-            Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(quest.isComplete ? "Achievement Get!" : "\(quest.difficulty.rawValue) Achievement")
-                        .font(.system(.caption2, design: .monospaced).weight(.black))
-                        .foregroundStyle(quest.isComplete ? BlockTheme.gold : BlockTheme.dimText)
-                    Text(quest.title)
-                        .font(.system(.headline, design: .monospaced).weight(.black))
-                        .foregroundStyle(BlockTheme.text)
-                        .strikethrough(quest.isComplete, color: BlockTheme.gold)
-                        .lineLimit(2)
-                    Text("+\(quest.rewardXP) XP  +\(quest.rewardCoins) coins")
+                Button(action: onEdit) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            MiniTag(title: quest.type.rawValue, icon: quest.type.icon, tint: quest.type.tint)
+                            MiniTag(title: quest.status.rawValue, icon: quest.status.icon, tint: quest.status.tint)
+                        }
+
+                        Text(quest.title)
+                            .font(.system(quest.type == .main ? .title3 : .headline, design: .monospaced).weight(.black))
+                            .foregroundStyle(BlockTheme.text)
+                            .strikethrough(quest.isComplete, color: BlockTheme.gold)
+                            .lineLimit(2)
+
+                        HStack(spacing: 8) {
+                            Text("+\(quest.rewardXP) XP")
+                            Text("+\(quest.rewardCoins) coins")
+                            if !quest.objectives.isEmpty {
+                                Text("\(quest.completedObjectiveCount)/\(quest.objectives.count)")
+                            }
+                        }
                         .font(.system(.caption, design: .monospaced).weight(.bold))
-                        .foregroundStyle(BlockTheme.emerald)
-                    HStack(spacing: 6) {
-                        MiniTag(title: quest.scope.rawValue, icon: quest.scope.icon, tint: quest.scope.tint)
-                        MiniTag(title: quest.category.rawValue, icon: quest.category.icon, tint: quest.category.tint)
+                        .foregroundStyle(quest.isReadyToClaim ? BlockTheme.gold : BlockTheme.emerald)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+
+                VStack(spacing: 4) {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(BlockTheme.gold)
+                            .frame(width: 34, height: 26)
+                    }
+                    .accessibilityLabel("Edit quest")
+
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(BlockTheme.dimText)
+                            .frame(width: 34, height: 26)
+                    }
+                    .accessibilityLabel("Delete quest")
+                }
+            }
+
+            if !quest.objectives.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    PixelProgress(value: quest.objectiveProgress)
+                        .frame(height: 14)
+
+                    ForEach(quest.objectives) { objective in
+                        ObjectiveRow(
+                            objective: objective,
+                            isQuestComplete: quest.isComplete,
+                            onToggle: { onObjectiveToggle(objective) }
+                        )
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
 
-            VStack(spacing: 4) {
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                        .font(.caption.weight(.black))
-                        .foregroundStyle(BlockTheme.gold)
-                        .frame(width: 34, height: 26)
+            HStack(spacing: 6) {
+                MiniTag(title: quest.difficulty.rawValue, icon: quest.difficulty.icon, tint: quest.difficulty.tint)
+                MiniTag(title: quest.scope.rawValue, icon: quest.scope.icon, tint: quest.scope.tint)
+                MiniTag(title: quest.category.rawValue, icon: quest.category.icon, tint: quest.category.tint)
+                Spacer(minLength: 0)
+                if quest.isReadyToClaim {
+                    Text("CLAIM")
+                        .font(.system(.caption2, design: .monospaced).weight(.black))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(BlockTheme.gold)
+                        .overlay {
+                            Rectangle()
+                                .stroke(.black.opacity(0.62), lineWidth: 2)
+                        }
                 }
-                .accessibilityLabel("Edit quest")
-
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.caption.weight(.black))
-                        .foregroundStyle(BlockTheme.dimText)
-                        .frame(width: 34, height: 26)
-                }
-                .accessibilityLabel("Delete quest")
             }
         }
         .padding(10)
-        .background(quest.isComplete ? Color(red: 0.08, green: 0.19, blue: 0.11) : BlockTheme.deepStone)
+        .background(backgroundColor)
         .overlay {
             Rectangle()
-                .stroke(quest.isComplete ? BlockTheme.emerald : BlockTheme.stone, lineWidth: 3)
+                .stroke(borderColor, lineWidth: quest.type == .main ? 4 : 3)
         }
         .shadow(color: .black.opacity(0.36), radius: 0, x: 3, y: 3)
+    }
+
+    private var backgroundColor: Color {
+        if quest.isComplete { return Color(red: 0.08, green: 0.19, blue: 0.11) }
+        if quest.isReadyToClaim { return Color(red: 0.22, green: 0.17, blue: 0.05) }
+        return quest.type == .main ? Color(red: 0.16, green: 0.13, blue: 0.07) : BlockTheme.deepStone
+    }
+
+    private var borderColor: Color {
+        if quest.isComplete { return BlockTheme.emerald }
+        if quest.isReadyToClaim { return BlockTheme.gold }
+        return quest.type == .main ? quest.type.tint : BlockTheme.stone
+    }
+}
+
+struct ObjectiveRow: View {
+    let objective: QuestObjective
+    let isQuestComplete: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 8) {
+                Image(systemName: objective.isComplete ? "checkmark.square.fill" : "square")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(objective.isComplete ? BlockTheme.emerald : BlockTheme.dimText)
+                    .frame(width: 18)
+                Text(objective.title)
+                    .font(.system(.caption, design: .monospaced).weight(.bold))
+                    .foregroundStyle(objective.isComplete ? BlockTheme.dimText : BlockTheme.text)
+                    .strikethrough(objective.isComplete, color: BlockTheme.emerald)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 30)
+            .background(Color.black.opacity(0.32))
+            .overlay {
+                Rectangle()
+                    .stroke(Color.black.opacity(0.52), lineWidth: 2)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isQuestComplete)
     }
 }
 
 struct EditQuestSheet: View {
     let quest: Quest
-    let onSave: (String, QuestDifficulty, QuestScope, QuestCategory) -> Void
+    let onSave: (String, QuestType, QuestDifficulty, QuestScope, QuestCategory, [QuestObjective]) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
+    @State private var type: QuestType
     @State private var difficulty: QuestDifficulty
     @State private var scope: QuestScope
     @State private var category: QuestCategory
+    @State private var objectiveText: String
 
-    init(quest: Quest, onSave: @escaping (String, QuestDifficulty, QuestScope, QuestCategory) -> Void) {
+    init(quest: Quest, onSave: @escaping (String, QuestType, QuestDifficulty, QuestScope, QuestCategory, [QuestObjective]) -> Void) {
         self.quest = quest
         self.onSave = onSave
         _title = State(initialValue: quest.title)
+        _type = State(initialValue: quest.type)
         _difficulty = State(initialValue: quest.difficulty)
         _scope = State(initialValue: quest.scope)
         _category = State(initialValue: quest.category)
+        _objectiveText = State(initialValue: quest.objectives.map(\.title).joined(separator: "\n"))
     }
 
     var body: some View {
@@ -1219,8 +1530,20 @@ struct EditQuestSheet: View {
                         }
 
                     DifficultyPicker(selection: $difficulty)
+                    QuestTypePicker(selection: $type)
                     ScopePicker(selection: $scope)
                     CategoryPicker(selection: $category)
+                    TextField("Objectives", text: $objectiveText, axis: .vertical)
+                        .lineLimit(3...7)
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                        .foregroundStyle(BlockTheme.text)
+                        .tint(BlockTheme.gold)
+                        .padding(10)
+                        .background(BlockTheme.bedrock)
+                        .overlay {
+                            Rectangle()
+                                .stroke(BlockTheme.stone, lineWidth: 3)
+                        }
                     Spacer()
                 }
                 .padding(16)
@@ -1232,10 +1555,25 @@ struct EditQuestSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(title, difficulty, scope, category) }
+                    Button("Save") {
+                        onSave(title, type, difficulty, scope, category, parsedObjectives)
+                    }
                 }
             }
         }
+    }
+
+    private var parsedObjectives: [QuestObjective] {
+        let existingByTitle = quest.objectives.reduce(into: [String: QuestObjective]()) { result, objective in
+            result[objective.title] = objective
+        }
+        return objectiveText
+            .split(whereSeparator: { $0 == "," || $0 == "\n" })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { title in
+                existingByTitle[title] ?? QuestObjective(title: title)
+            }
     }
 }
 
